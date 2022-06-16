@@ -2,8 +2,6 @@
 """
 Train and eval functions used in main.py
 """
-from dis import dis
-import math
 import os
 import sys
 from tqdm import tqdm
@@ -19,7 +17,6 @@ def reduce_tensor(tensor: torch.Tensor):
     dist.all_reduce(rt, op=dist.reduce_op.SUM)
     rt /= dist.get_world_size()
     return rt
-
 
 def train_one_epoch(model: torch.nn.Module, criterion: torch.nn.Module,
                     data_loader: Iterable, optimizer: torch.optim.Optimizer,
@@ -55,7 +52,7 @@ def evaluate(model, criterion, postprocessors, data_loader, coco_gt, device):
     header = '[Test] '
 
     coco_evaluator = CocoEvaluator(coco_gt)
-    # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]
+    # coco_evaluator.coco_eval[iou_types[0]].params.iouThrs = [0, 0.1, 0.5, 0.75]   # 设置iou的计算阈值
 
     tbar = tqdm(data_loader, desc=header, dynamic_ncols=True)
     for samples, targets in tbar:
@@ -70,9 +67,7 @@ def evaluate(model, criterion, postprocessors, data_loader, coco_gt, device):
         res = {target['image_id'].item(): output for target, output in zip(targets, results)}
         coco_evaluator.update(res)
 
-    # accumulate predictions from all images
+    # Cal mAP for predictions 
     coco_evaluator.getResult()
-    # coco_evaluator.accumulate()
-    # coco_evaluator.summarize()
 
     return coco_evaluator

@@ -46,17 +46,16 @@ class Transformer(nn.Module):
 
     def forward(self, src, mask, query_embed, pos_embed):
         # flatten NxCxHxW to HWxNxC
-        bs, c, h, w = src.shape
-        src = src.flatten(2).permute(2, 0, 1)
-        pos_embed = pos_embed.flatten(2).permute(2, 0, 1)
-        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)
-        mask = mask.flatten(1)
+        bs, c, h, w = src.shape                                   # [bs, c, h, w]
+        src = src.flatten(2).permute(2, 0, 1)                     # [hw, bs, c]
+        pos_embed = pos_embed.flatten(2).permute(2, 0, 1)         # [hw, bs, c]
+        query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)   # [num_query, c] -> [num_query, bs, c]
+        mask = mask.flatten(1)                                    # [bs, hw]
 
-        tgt = torch.zeros_like(query_embed)
-        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)
-        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask,
-                          pos=pos_embed, query_pos=query_embed)
-        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)
+        tgt = torch.zeros_like(query_embed)                       # target  [num_query, bs, c]
+        memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)    # [hw, bs, c]
+        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask, pos=pos_embed, query_pos=query_embed)    # [6, num_query, bs, c] , 6 = bbox(4) + cls + score
+        return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)    # hs: [6, bs, num_query, c]   memory: [8, c, h, w]
 
 
 class TransformerEncoder(nn.Module):
@@ -74,8 +73,7 @@ class TransformerEncoder(nn.Module):
         output = src
 
         for layer in self.layers:
-            output = layer(output, src_mask=mask,
-                           src_key_padding_mask=src_key_padding_mask, pos=pos)
+            output = layer(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, pos=pos)
 
         if self.norm is not None:
             output = self.norm(output)
@@ -151,9 +149,8 @@ class TransformerEncoderLayer(nn.Module):
                      src_mask: Optional[Tensor] = None,
                      src_key_padding_mask: Optional[Tensor] = None,
                      pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(src, pos)
-        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+        q = k = self.with_pos_embed(src, pos)         # src + pos
+        src2 = self.self_attn(q, k, value=src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -216,7 +213,7 @@ class TransformerDecoderLayer(nn.Module):
                      memory_key_padding_mask: Optional[Tensor] = None,
                      pos: Optional[Tensor] = None,
                      query_pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(tgt, query_pos)
+        q = k = self.with_pos_embed(tgt, query_pos)     # tgt + query_pos
         tgt2 = self.self_attn(q, k, value=tgt, attn_mask=tgt_mask,
                               key_padding_mask=tgt_key_padding_mask)[0]
         tgt = tgt + self.dropout1(tgt2)
