@@ -15,41 +15,26 @@ import datasets.transforms as T
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):
-    def __init__(self, img_folder, ann_file, transforms, return_masks):
-        super(CocoDetection, self).__init__(img_folder, ann_file)
+    def __init__(self, img_folder, ann_file, transforms):
+        super(CocoDetection, self).__init__(img_folder, ann_file)   
+        # 继承CocoDetection, 传入数据集文件夹(root)路径和annotation.json路径, 父类会解析标注文件, 生成GT, 即self.coco, 同时解析所有图像的image_id
+        
         self._transforms = transforms
-        self.prepare = ConvertCocoPolysToMask(return_masks)
+        self.prepare = Prepare()
 
     def __getitem__(self, idx):
-        img, target = super(CocoDetection, self).__getitem__(idx)
-        image_id = self.ids[idx]
-        target = {'image_id': image_id, 'annotations': target}
-        img, target = self.prepare(img, target)
+        img, target = super(CocoDetection, self).__getitem__(idx)     # 调用父类的get_item函数, 获取图像, 
+        image_id = self.ids[idx]                                      # 获取图像的image_id
+        target = {'image_id': image_id, 'annotations': target}        # 产生label的时候, 不仅需要GT也需要image_id, 因为需要image_id来从annotations.json中来匹配真实的标注结果
+        img, target = self.prepare(img, target)                       # 转换坐标格式, 方便后续transform
         if self._transforms is not None:
             img, target = self._transforms(img, target)
         return img, target
 
 
-def convert_coco_poly_to_mask(segmentations, height, width):
-    masks = []
-    for polygons in segmentations:
-        rles = coco_mask.frPyObjects(polygons, height, width)
-        mask = coco_mask.decode(rles)
-        if len(mask.shape) < 3:
-            mask = mask[..., None]
-        mask = torch.as_tensor(mask, dtype=torch.uint8)
-        mask = mask.any(dim=2)
-        masks.append(mask)
-    if masks:
-        masks = torch.stack(masks, dim=0)
-    else:
-        masks = torch.zeros((0, height, width), dtype=torch.uint8)
-    return masks
-
-
-class ConvertCocoPolysToMask(object):
-    def __init__(self, return_masks=False):
-        self.return_masks = return_masks
+class Prepare(object):
+    def __init__(self):
+        pass
 
     def __call__(self, image, target):
         w, h = image.size
@@ -61,53 +46,30 @@ class ConvertCocoPolysToMask(object):
 
         anno = [obj for obj in anno if 'iscrowd' not in obj or obj['iscrowd'] == 0]
 
-        boxes = [obj["bbox"] for obj in anno]
+        boxes = [obj["bbox"] for obj in anno]    # coco原始标注的坐标格式: xywh(左上, 宽高)
         # guard against no boxes via resizing
         boxes = torch.as_tensor(boxes, dtype=torch.float32).reshape(-1, 4)
-        boxes[:, 2:] += boxes[:, :2]
+        boxes[:, 2:] += boxes[:, :2]             # 将坐标转换为: xyxy, 目的是方便后续的transform
         boxes[:, 0::2].clamp_(min=0, max=w)
         boxes[:, 1::2].clamp_(min=0, max=h)
 
         classes = [obj["category_id"] for obj in anno]
         classes = torch.tensor(classes, dtype=torch.int64)
 
-        if self.return_masks:
-            segmentations = [obj["segmentation"] for obj in anno]
-            masks = convert_coco_poly_to_mask(segmentations, h, w)
-
-        keypoints = None
-        if anno and "keypoints" in anno[0]:
-            keypoints = [obj["keypoints"] for obj in anno]
-            keypoints = torch.as_tensor(keypoints, dtype=torch.float32)
-            num_keypoints = keypoints.shape[0]
-            if num_keypoints:
-                keypoints = keypoints.view(num_keypoints, -1, 3)
-
         keep = (boxes[:, 3] > boxes[:, 1]) & (boxes[:, 2] > boxes[:, 0])
-        boxes = boxes[keep]
-        classes = classes[keep]
-        if self.return_masks:
-            masks = masks[keep]
-        if keypoints is not None:
-            keypoints = keypoints[keep]
 
         target = {}
-        target["boxes"] = boxes
-        target["labels"] = classes
-        if self.return_masks:
-            target["masks"] = masks
         target["image_id"] = image_id
-        if keypoints is not None:
-            target["keypoints"] = keypoints
+        target["boxes"] = boxes[keep]
+        target["labels"] = classes[keep]
 
         # for conversion to coco api
         area = torch.tensor([obj["area"] for obj in anno])
         iscrowd = torch.tensor([obj["iscrowd"] if "iscrowd" in obj else 0 for obj in anno])
         target["area"] = area[keep]
         target["iscrowd"] = iscrowd[keep]
-
-        target["orig_size"] = torch.as_tensor([int(h), int(w)])
         target["size"] = torch.as_tensor([int(h), int(w)])
+        target["orig_size"] = torch.as_tensor([int(h), int(w)])
 
         return image, target
 
@@ -154,5 +116,5 @@ def build(image_set, args):
     }
 
     img_folder, ann_file = PATHS[image_set]
-    dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set), return_masks=args.masks)
+    dataset = CocoDetection(img_folder, ann_file, transforms=make_coco_transforms(image_set))
     return dataset

@@ -15,3 +15,7 @@ experiment-*
 .mypy_cache/*
 not_tracked_dir/
 .vscode
+*.zip
+*.png
+*.jpg
+COCO/
