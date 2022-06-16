@@ -7,7 +7,7 @@
 - 无关目标检测代码的删除
 - 验证阶段，由DDP模式改为单进程模型
 - 修改指标计算部分代码, 因为验证阶段变为单进程模型, 因此借助pycocotools实现更简单
-
+- 官方的ReadMe在: [Official ReadMe](Official_README.md)
 
 ## 如何运行
 
