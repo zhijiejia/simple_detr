@@ -88,6 +88,12 @@ class HungarianMatcher(nn.Module):
         # c: [bs, num_queries, 某个target中 GT的框的个数]
         # enumerate() 第i次, 在最后一个维度取到的是第i个样本的GT框, 这时候c[i], 就是取第i个样本的num_queries, 这样的[num_queries, target中GT的框的个数]正好是第i个样本的cost-matrix
         # cost-matrix: c[i] : [num_queries, 某个target中 GT的框的个数]
+
+        # indices: src, target
+        # src是list, 其中每个值的取值范围: [0, num_queries - 1]
+        # target是list, 其中每个值的取值范围: [0, 每个样本中bbox的个数 - 1]
+        # src中的值, 是按照增序排序的, target中的每个值是 和src中 对应位置的值 匹配的 真实bbox的index
+ 
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
 
 
