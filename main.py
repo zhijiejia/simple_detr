@@ -12,9 +12,9 @@ import torch
 from torch.utils.data import DataLoader, DistributedSampler
 
 import util.misc as utils
-from datasets import build_dataset
+from datasets.coco import build as build_coco
 from engine import evaluate, train_one_epoch
-from models import build_model
+from models.detr import build as build_model
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -96,9 +96,6 @@ def get_args_parser():
 
 def main(args):
     utils.init_distributed_mode(args)
-
-    if args.frozen_weights is not None:
-        assert args.masks, "Frozen training is meant for segmentation only"
     print(args)
 
     device = torch.device(args.device)
@@ -128,8 +125,8 @@ def main(args):
     optimizer = torch.optim.AdamW(param_dicts, lr=args.lr, weight_decay=args.weight_decay)
     lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_drop)
 
-    dataset_train = build_dataset(image_set='train', args=args)
-    dataset_val = build_dataset(image_set='val', args=args)
+    dataset_train = build_coco(image_set='train', args=args)
+    dataset_val = build_coco(image_set='val', args=args)
 
     sampler_train = DistributedSampler(dataset_train)
     sampler_val = DistributedSampler(dataset_val, shuffle=False)
