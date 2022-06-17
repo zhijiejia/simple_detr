@@ -67,12 +67,12 @@ class PositionEmbeddingLearned(nn.Module):
         h, w = x.shape[-2:]
         i = torch.arange(w, device=x.device)
         j = torch.arange(h, device=x.device)
-        x_emb = self.col_embed(i)
-        y_emb = self.row_embed(j)
+        x_emb = self.col_embed(i)    # (w, 128)
+        y_emb = self.row_embed(j)    # (h, 128)
         pos = torch.cat([
-            x_emb.unsqueeze(0).repeat(h, 1, 1),
-            y_emb.unsqueeze(1).repeat(1, w, 1),
-        ], dim=-1).permute(2, 0, 1).unsqueeze(0).repeat(x.shape[0], 1, 1, 1)
+            x_emb.unsqueeze(0).repeat(h, 1, 1),    # (h, w, 128)
+            y_emb.unsqueeze(1).repeat(1, w, 1),    # (h, w, 128)
+        ], dim=-1).permute(2, 0, 1).unsqueeze(0).repeat(x.shape[0], 1, 1, 1)   # (h, w, 256) -> (256, h, w) -> (bs, 256, h, w)
         return pos
 
 

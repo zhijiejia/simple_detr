@@ -60,6 +60,8 @@ class DETR(nn.Module):
 
         src, mask = features[-1].decompose()
         assert mask is not None
+        # query_embed: [num_queries, c], object query的shape是 [bs, num_queries, c], 这说明bs内的不同样本共享一个query_embed
+        # pos_embed: [bs, c, h, w], position embeding的shape和输入encoder的feature map的shape一样
         hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
 
         outputs_class = self.class_embed(hs)            # [6, bs, num_query, 1 + num_class]
