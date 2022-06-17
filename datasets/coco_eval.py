@@ -17,7 +17,6 @@ class CocoEvaluator(object):
     def __init__(self, coco_gt, iou_type='bbox'):
         coco_gt = copy.deepcopy(coco_gt)
         self.coco_gt = coco_gt
-
         self.iou_type = iou_type
 
         self.img_ids = []

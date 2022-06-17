@@ -47,7 +47,7 @@ class Transformer(nn.Module):
     def forward(self, src, mask, query_embed, pos_embed):
         # flatten NxCxHxW to HWxNxC
         bs, c, h, w = src.shape                                   # [bs, c, h, w]
-        src = src.flatten(2).permute(2, 0, 1)                     # [hw, bs, c]
+        src = src.flatten(2).permute(2, 0, 1)                     # [hw, bs, c], 因为encoder和decoder中都用了nn.MultiheadAttention(), 他们采用的是batch_first=False, 所以是[hw, bs, c]
         pos_embed = pos_embed.flatten(2).permute(2, 0, 1)         # [hw, bs, c]
         query_embed = query_embed.unsqueeze(1).repeat(1, bs, 1)   # [num_query, c] -> [num_query, bs, c]
         mask = mask.flatten(1)                                    # [bs, hw]
@@ -71,7 +71,8 @@ class TransformerEncoder(nn.Module):
                 src_key_padding_mask: Optional[Tensor] = None,
                 pos: Optional[Tensor] = None):
         output = src
-
+        print(src.shape)
+        
         for layer in self.layers:
             output = layer(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask, pos=pos)
 
@@ -149,7 +150,7 @@ class TransformerEncoderLayer(nn.Module):
                      src_mask: Optional[Tensor] = None,
                      src_key_padding_mask: Optional[Tensor] = None,
                      pos: Optional[Tensor] = None):
-        q = k = self.with_pos_embed(src, pos)         # src + pos
+        q = k = self.with_pos_embed(src, pos)         # k = q = src + pos
         src2 = self.self_attn(q, k, value=src, attn_mask=src_mask, key_padding_mask=src_key_padding_mask)[0]
         src = src + self.dropout1(src2)
         src = self.norm1(src)

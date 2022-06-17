@@ -144,8 +144,8 @@ def main(args):
 
     if args.eval and utils.is_main_process():
         coco_evaluator = evaluate(model, criterion, postprocessors, data_loader_val, dataset_val.coco, device)
-        if args.output_dir:
-            utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
+        # if args.output_dir:
+        #     utils.save_on_master(coco_evaluator.coco_eval["bbox"].eval, output_dir / "eval.pth")
         sys.exit(0)
 
     print("Start training")
