@@ -54,7 +54,7 @@ class Transformer(nn.Module):
 
         tgt = torch.zeros_like(query_embed)                       # target  [num_query, bs, c]
         memory = self.encoder(src, src_key_padding_mask=mask, pos=pos_embed)    # [hw, bs, c]
-        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask, pos=pos_embed, query_pos=query_embed)    # [6, num_query, bs, c] , 6 = bbox(4) + cls + score
+        hs = self.decoder(tgt, memory, memory_key_padding_mask=mask, pos=pos_embed, query_pos=query_embed)    # [6, num_query, bs, c]
         return hs.transpose(1, 2), memory.permute(1, 2, 0).view(bs, c, h, w)    # hs: [6, bs, num_query, c]   memory: [8, c, h, w]
 
 
@@ -116,7 +116,7 @@ class TransformerDecoder(nn.Module):
                 intermediate.pop()
                 intermediate.append(output)
 
-        if self.return_intermediate:
+        if self.return_intermediate:          # 因为transformer的Decoder有6个decoder layer构成, return_intermediate参数控制: 是否返回每个decoder layer的输出值
             return torch.stack(intermediate)
 
         return output.unsqueeze(0)

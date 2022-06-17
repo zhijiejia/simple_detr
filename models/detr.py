@@ -64,12 +64,17 @@ class DETR(nn.Module):
         assert mask is not None
         hs = self.transformer(self.input_proj(src), mask, self.query_embed.weight, pos[-1])[0]
 
-        outputs_class = self.class_embed(hs)
-        outputs_coord = self.bbox_embed(hs).sigmoid()
-        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}
+        outputs_class = self.class_embed(hs)            # [6, bs, num_query, 1 + num_class]
+        outputs_coord = self.bbox_embed(hs).sigmoid()   # [6, bs, num_query, 4]
+
+        out = {'pred_logits': outputs_class[-1], 'pred_boxes': outputs_coord[-1]}   # 取最后一层decoder layer的输出作为模型的输出
+
+        # outputs_class[-1].shape : [bs, num_query, 1 + num_class]
+        # outputs_coord[-1].shape : [bs, num_query, 4]
+
         if self.aux_loss:
-            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)
-        return out
+            out['aux_outputs'] = self._set_aux_loss(outputs_class, outputs_coord)   # 其他decoder layer的输出用于计算辅助loss, 用于加速收敛
+        return out 
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord):
@@ -211,9 +216,6 @@ class SetCriterion(nn.Module):
             for i, aux_outputs in enumerate(outputs['aux_outputs']):
                 indices = self.matcher(aux_outputs, targets)
                 for loss in self.losses:
-                    if loss == 'masks':
-                        # Intermediate masks losses are too costly to compute, we ignore them.
-                        continue
                     kwargs = {}
                     if loss == 'labels':
                         # Logging is enabled only for the last layer
@@ -235,8 +237,12 @@ class PostProcess(nn.Module):
             target_sizes: tensor of dimension [batch_size x 2] containing the size of each images of the batch
                           For evaluation, this must be the original image size (before any data augmentation)
                           For visualization, this should be the image size after data augment, but before padding
+                          
+                          target_sizes shape: [bs, 2], target_sizes中包含的是bs中每一张图像的原始size
         """
         out_logits, out_bbox = outputs['pred_logits'], outputs['pred_boxes']
+        # out_logits: bs, num_query, num_class + 1
+        # out_bbox: bs, num_query, 4
 
         assert len(out_logits) == len(target_sizes)
         assert target_sizes.shape[1] == 2
@@ -245,11 +251,12 @@ class PostProcess(nn.Module):
         scores, labels = prob[..., :-1].max(-1)
 
         # convert to [x0, y0, x1, y1] format
-        boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)
+        boxes = box_ops.box_cxcywh_to_xyxy(out_bbox)                      # [bs, num_query, 4]
+
         # and from relative [0, 1] to absolute [0, height] coordinates
-        img_h, img_w = target_sizes.unbind(1)
-        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)
-        boxes = boxes * scale_fct[:, None, :]
+        img_h, img_w = target_sizes.unbind(1)                             # 分解, [bs, 2] -> [bs, 1] + [bs, 1]
+        scale_fct = torch.stack([img_w, img_h, img_w, img_h], dim=1)      # 拼接, 4 * [bs, 1] -> [bs, 4]
+        boxes = boxes * scale_fct[:, None, :]                             # scale_fct: [bs, 4] -> [bs, 1, 4]  boxes: [bs, num_query, 4]
 
         results = [{'scores': s, 'labels': l, 'boxes': b} for s, l, b in zip(scores, labels, boxes)]
 
@@ -295,8 +302,7 @@ def build(args):
         aux_loss=args.aux_loss,
     )
     matcher = build_matcher(args)
-    weight_dict = {'loss_ce': 1, 'loss_bbox': args.bbox_loss_coef}
-    weight_dict['loss_giou'] = args.giou_loss_coef
+    weight_dict = {'loss_ce': 1, 'loss_bbox': args.bbox_loss_coef, 'loss_giou': args.giou_loss_coef}
     
     # TODO this is a hack
     if args.aux_loss:
@@ -305,10 +311,9 @@ def build(args):
             aux_weight_dict.update({k + f'_{i}': v for k, v in weight_dict.items()})
         weight_dict.update(aux_weight_dict)
 
-    losses = ['labels', 'boxes', 'cardinality']    # total-loss 的3个组成部分
+    losses = ['labels', 'boxes', 'cardinality']    # 目标检测 total-loss 的3个组成部分
 
-    criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict, eos_coef=args.eos_coef, losses=losses)
-    criterion.to(device)
-    postprocessors = PostProcess()
+    criterion = SetCriterion(num_classes, matcher=matcher, weight_dict=weight_dict, eos_coef=args.eos_coef, losses=losses).to(device)
+    postprocessors = PostProcess()    # 将模型输出的坐标[0-1]  转换成 原图上的坐标
 
     return model, criterion, postprocessors
