@@ -115,19 +115,17 @@ class SetCriterion(nn.Module):
         targets dicts must contain the key "labels" containing a tensor of dim [nb_target_boxes]
         """
         assert 'pred_logits' in outputs
-        src_logits = outputs['pred_logits']
+        src_logits = outputs['pred_logits']   # [bs, num_queries, 1 + num_class]
 
-        idx = self._get_src_permutation_idx(indices)
-        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])
-        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)
-        target_classes[idx] = target_classes_o
+        idx = self._get_src_permutation_idx(indices)  # shape: [2, x]
+        target_classes_o = torch.cat([t["labels"][J] for t, (_, J) in zip(targets, indices)])  # 取target中每个bbox的label, 顺序按照matcher后的顺序
+        target_classes = torch.full(src_logits.shape[:2], self.num_classes, dtype=torch.int64, device=src_logits.device)  # [bs, num_queries]
+        target_classes[idx] = target_classes_o        # [bs, num_queries] 将匹配上的query的label置为标注的label, 其余为 no object 类    
+        # idx作为一个二维索引, idx的第一维度: 锁定是哪个样本, idx的第二维度: 从 num_queries个query 中锁定 对应的bbox
 
         loss_ce = F.cross_entropy(src_logits.transpose(1, 2), target_classes, self.empty_weight)
         losses = {'loss_ce': loss_ce}
 
-        if log:
-            # TODO this should probably be a separate loss, not hacked in this one here
-            losses['class_error'] = 100 - accuracy(src_logits[idx], target_classes_o)[0]
         return losses
 
     @torch.no_grad()
@@ -151,8 +149,10 @@ class SetCriterion(nn.Module):
            The target boxes are expected in format (center_x, center_y, w, h), normalized by the image size.
         """
         assert 'pred_boxes' in outputs
-        idx = self._get_src_permutation_idx(indices)
-        src_boxes = outputs['pred_boxes'][idx]
+        # outputs['pred_boxes']: [bs, num_queries, 4]
+
+        idx = self._get_src_permutation_idx(indices)    # 解析每个index, 都是属于哪个样本, 对应样本的哪个bbox, idx看作一个二维索引
+        src_boxes = outputs['pred_boxes'][idx]          
         target_boxes = torch.cat([t['boxes'][i] for t, (_, i) in zip(targets, indices)], dim=0)
 
         loss_bbox = F.l1_loss(src_boxes, target_boxes, reduction='none')
@@ -164,12 +164,13 @@ class SetCriterion(nn.Module):
             box_ops.box_cxcywh_to_xyxy(src_boxes),
             box_ops.box_cxcywh_to_xyxy(target_boxes)))
         losses['loss_giou'] = loss_giou.sum() / num_boxes
+
         return losses
 
     def _get_src_permutation_idx(self, indices):
         # permute predictions following indices
-        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])
-        src_idx = torch.cat([src for (src, _) in indices])
+        batch_idx = torch.cat([torch.full_like(src, i) for i, (src, _) in enumerate(indices)])    # shape: [x, ], 标明 batch中 每个匹配的query 是对应哪个样本的
+        src_idx = torch.cat([src for (src, _) in indices])                                        # shape: [x, ], 记录 batch中 每个匹配的query的index
         return batch_idx, src_idx
 
     def _get_tgt_permutation_idx(self, indices):
@@ -197,7 +198,7 @@ class SetCriterion(nn.Module):
         outputs_without_aux = {k: v for k, v in outputs.items() if k != 'aux_outputs'}
 
         # Retrieve the matching between the outputs of the last layer and the targets
-        indices = self.matcher(outputs_without_aux, targets)    # 匹配
+        indices = self.matcher(outputs_without_aux, targets)    # 匹配 query 和 GT的bbox
 
         # Compute the average number of target boxes accross all nodes, for normalization purposes
         num_boxes = sum(len(t["labels"]) for t in targets)         # 计算每张图中的bbox的个数

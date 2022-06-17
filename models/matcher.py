@@ -80,10 +80,14 @@ class HungarianMatcher(nn.Module):
         # Final cost matrix
         C = self.cost_bbox * cost_bbox + self.cost_class * cost_class + self.cost_giou * cost_giou
 
-        C = C.view(bs, num_queries, -1).cpu()
+        C = C.view(bs, num_queries, -1).cpu()               # [bs, num_queries, sum(number_target_boxes) for batch]
 
         sizes = [len(v["boxes"]) for v in targets]
-        indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]   # cost-matrix: c[i] : [batch_size * num_queries, 每个target中 GT的框的个数]
+
+        indices = [linear_sum_assignment(c[i]) for i, c in enumerate(C.split(sizes, -1))]   
+        # c: [bs, num_queries, 某个target中 GT的框的个数]
+        # enumerate() 第i次, 在最后一个维度取到的是第i个样本的GT框, 这时候c[i], 就是取第i个样本的num_queries, 这样的[num_queries, target中GT的框的个数]正好是第i个样本的cost-matrix
+        # cost-matrix: c[i] : [num_queries, 某个target中 GT的框的个数]
         return [(torch.as_tensor(i, dtype=torch.int64), torch.as_tensor(j, dtype=torch.int64)) for i, j in indices]
 
 
